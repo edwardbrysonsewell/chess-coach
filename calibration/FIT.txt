@@ -1,0 +1,32 @@
+
+OBSERVATIONS (sampled configurations, rating derived from opponent)
+label      temp  blunder   measured     se  note
+1150          3    0.008       1079     40
+1150          4    0.000       1141     62
+1000          5    0.019        987     33
+850           7    0.033        873     33
+1150          8    0.000       1019     77
+700           9    0.048        711     94
+700           9    0.048        782     33
+550          11    0.064        577     34
+400          13    0.081        394     36
+1150         14    0.000        913     97
+250          15    0.099        175     38
+250          15    0.099        313     55
+1150         22    0.000        808    126
+1150         32    0.000        561    247  BOUND ONLY (score hit 0 or 100%)
+1150         45    0.000        561    247
+1150         65    0.000        561    247  BOUND ONLY (score hit 0 or 100%)
+
+FIT  Elo = 1385 - 115.9 * sqrt(temp) - 6877 * blunderRate   (14 observations)
+residual RMS: 42 Elo
+
+RECOMMENDED TEMPERATURES
+target    blunder    temp
+250         0.200     n/a
+400         0.130       1
+550         0.085       5
+700         0.055       7
+850         0.035       6
+1000        0.020       5
+1150        0.010       2

@@ -1,0 +1,14 @@
+Piece artwork: the "Cburnett" chess set.
+
+Author:  Colin M.L. Burnett (User:Cburnett on Wikimedia Commons)
+Licence: CC BY-SA 3.0  <https://creativecommons.org/licenses/by-sa/3.0/>
+         (also available under GFDL and BSD-3-Clause from the original author)
+Source:  vendored from the lichess distribution of the set,
+         https://github.com/lichess-org/lila/tree/master/public/piece/cburnett
+
+CC BY-SA 3.0 requires attribution and carries a share-alike condition: a
+derivative of the artwork must be released under the same licence. That is
+irrelevant to private personal use of this app, and relevant only if the app or
+the images are ever distributed. Flagged rather than decided.
+
+The SVG files here are unmodified.

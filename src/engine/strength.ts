@@ -85,6 +85,27 @@ export interface RungConfig {
  * Anything below roughly 570 cannot be measured against the 1320 anchor - the
  * score floor is zero - so low rungs are measured against a calibrated middle
  * rung and chained. See tools/calibrate-report.ts.
+ *
+ * MEASURED RESULT of the values below, 1080 games, 120 per match, 2026-07-29:
+ *
+ *     labelled   measured   match it came from
+ *         250        313    9.2% vs rung 700
+ *         400        394    25.8% vs rung 550
+ *         550        577    31.7% vs rung 700
+ *         700        711    2.9% vs rung 1320
+ *         850        873    34.2% vs rung 1000
+ *        1000        987    37.1% vs rung 1150
+ *        1150       1079    20.0% vs rung 1320
+ *        1320       1320    anchor
+ *
+ * Every rung lands within 71 Elo of its label and most within 30, against
+ * per-match standard errors of 33 to 55 Elo. One honest wrinkle: Elo is not
+ * perfectly transitive over wide gaps, so rung 250 reads 313 measured directly
+ * against 700 but 175 when chained up through 400 and 550. Treat it as roughly
+ * 250 give or take 70 rather than a single figure.
+ *
+ * Rungs 1500 and above are Stockfish's own UCI_Elo used faithfully, and are NOT
+ * independently verified here.
  */
 export const LADDER: readonly RungConfig[] = [
   { elo: 250,  mode: 'sampled', nodes: 50_000, multiPv: 24, temperatureCp: 15, blunderRate: 0.099, blunderBandCp: [200, 1200], thinkMs: [350, 900] },

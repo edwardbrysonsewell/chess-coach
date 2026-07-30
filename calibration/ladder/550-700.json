@@ -1,0 +1,28 @@
+{
+  "eloA": 550,
+  "eloB": 700,
+  "games": 120,
+  "aWins": 33,
+  "bWins": 77,
+  "draws": 10,
+  "scoreA": 0.31666666666666665,
+  "terminations": {
+    "adjudicated-material": 71,
+    "threefold-repetition": 9,
+    "checkmate": 39,
+    "insufficient-material": 1
+  },
+  "meanPlies": 92.78333333333333,
+  "elapsedMs": 538726,
+  "configA": {
+    "mode": "sampled",
+    "temperatureCp": 11,
+    "blunderRate": 0.064,
+    "nodes": 50000,
+    "multiPv": 18,
+    "blunderBandCp": [
+      160,
+      700
+    ]
+  }
+}

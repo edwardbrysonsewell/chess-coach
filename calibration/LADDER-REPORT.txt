@@ -1,0 +1,33 @@
+
+MATCH RESULTS
+pair           games    score         W-D-L    Elo diff  mean plies
+250 vs 400       120    22.1%       25-3-92    -219 ±38  75
+250 vs 700       120     9.2%      10-2-108    -398 ±55  72
+400 vs 550       120    25.8%       28-6-86    -183 ±36  88
+550 vs 700       120    31.7%      33-10-77    -134 ±34  93
+700 vs 1320      120     2.9%       2-3-115    -609 ±94  80
+700 vs 850       120    37.1%      38-13-69     -92 ±33  100
+850 vs 1000      120    34.2%      28-26-66    -114 ±33  110
+1000 vs 1150     120    37.1%      28-33-59     -92 ±33  123
+1150 vs 1320     120    20.0%       5-38-77    -241 ±40  110
+
+MEASURED RATING PER RUNG
+labelled    measured  basis
+250              313  from 9.2% vs rung 700 (120 games)
+400              394  from 25.8% vs rung 550 (120 games)
+550              577  from 31.7% vs rung 700 (120 games)
+700              711  from 2.9% vs rung 1320 (120 games)
+850              873  from 34.2% vs rung 1000 (120 games)
+1000             987  from 37.1% vs rung 1150 (120 games)
+1150            1079  from 20.0% vs rung 1320 (120 games)
+1320            1320  anchor - Stockfish's own UCI_Elo
+1500               -  not measured in this run
+1700               -  not measured in this run
+1900               -  not measured in this run
+2100               -  not measured in this run
+2300               -  not measured in this run
+2500               -  not measured in this run
+2800               -  not measured in this run
+
+1080 games across 9 matches, 89.0 engine-minutes
+terminations: {"adjudicated-material":653,"checkmate":293,"ply-limit":32,"threefold-repetition":86,"insufficient-material":16}
