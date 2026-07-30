@@ -159,8 +159,12 @@ Each phase ends with evidence pasted and a stop.
 
 ## PARKED — judgment calls for Bryson
 
-1. **Hosting** (blocking; asked now): Cloudflare Pages / Netlify / GitHub Pages,
-   given that GitHub Pages on a free account requires a public repo.
+1. ~~Hosting~~ — **settled 2026-07-29**: no preference between GitHub and
+   Cloudflare, so GitHub Pages, because `gh` was already authenticated and
+   Cloudflare needed an interactive login. Public repo
+   `edwardbrysonsewell/chess-coach`, live at
+   <https://edwardbrysonsewell.github.io/chess-coach/>, deployed by GitHub
+   Actions on every push to `main`.
 2. chess.js is BSD-2-Clause, not MIT.
 3. Post-game accuracy formula: Lichess-style win-probability model vs a simpler
    ACPL curve. Whichever we pick gets documented in the README.
