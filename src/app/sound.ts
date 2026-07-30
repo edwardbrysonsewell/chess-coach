@@ -14,7 +14,11 @@
  * On iOS, WebAudio output follows the ring/silent switch, which is the required
  * behaviour: flick the switch and the app goes quiet.
  *
- * Haptics are deliberately absent. See PLAN.md - the mechanisms Safari offers
+ * The scheduling is a free function taking any BaseAudioContext, so the cues can
+ * be rendered into an OfflineAudioContext and measured. "The move sound is
+ * silent" is a bug that is invisible to every other kind of test.
+ *
+ * Haptics are deliberately absent. See PLAN.md — the mechanisms Safari offers
  * cannot fire on the bot's reply or on check, so sound and motion carry the
  * whole load.
  */
@@ -31,6 +35,19 @@ export type Cue =
   | 'danger'
   | 'takeback';
 
+export const ALL_CUES: readonly Cue[] = [
+  'lift',
+  'place',
+  'capture',
+  'check',
+  'illegal',
+  'promotion',
+  'checkmate',
+  'draw',
+  'danger',
+  'takeback',
+];
+
 export interface SoundSettings {
   enabled: boolean;
   /** 0 to 1. Scales everything; 0.7 is a sensible default. */
@@ -38,21 +55,137 @@ export interface SoundSettings {
 }
 
 interface Knock {
-  /** Body frequency in Hz. */
   freq: number;
-  /** Body decay in seconds. */
   decay: number;
-  /** Noise-burst centre frequency in Hz. */
   noiseHz: number;
-  /** Noise burst length in seconds. */
   noiseDecay: number;
-  /** Relative level, 0 to 1. */
   level: number;
 }
 
-const WOOD_LIFT: Knock = { freq: 300, decay: 0.09, noiseHz: 2400, noiseDecay: 0.02, level: 0.5 };
-const WOOD_PLACE: Knock = { freq: 196, decay: 0.14, noiseHz: 1500, noiseDecay: 0.03, level: 0.9 };
-const WOOD_HARD: Knock = { freq: 150, decay: 0.2, noiseHz: 1100, noiseDecay: 0.045, level: 1 };
+const WOOD_LIFT: Knock = { freq: 300, decay: 0.09, noiseHz: 2400, noiseDecay: 0.02, level: 0.6 };
+const WOOD_PLACE: Knock = { freq: 196, decay: 0.14, noiseHz: 1500, noiseDecay: 0.03, level: 1 };
+const WOOD_HARD: Knock = { freq: 150, decay: 0.2, noiseHz: 1100, noiseDecay: 0.05, level: 1 };
+
+/** Longest a cue can last, so an offline render knows how much to allocate. */
+export const MAX_CUE_SECONDS = 1.2;
+
+export function makeNoiseBuffer(ctx: BaseAudioContext): AudioBuffer {
+  const length = Math.floor(ctx.sampleRate * 0.25);
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  // Slightly darkened noise: a one-pole low-pass over white noise reads as
+  // wood, where raw white noise reads as static.
+  let last = 0;
+  for (let i = 0; i < length; i++) {
+    const white = Math.random() * 2 - 1;
+    last = 0.65 * last + 0.35 * white;
+    data[i] = last;
+  }
+  return buffer;
+}
+
+/**
+ * Schedule one cue onto `destination`, starting at `at`. Pure scheduling: works
+ * on a live AudioContext or an OfflineAudioContext.
+ */
+export function scheduleCue(
+  ctx: BaseAudioContext,
+  destination: AudioNode,
+  cue: Cue,
+  at: number,
+  noise: AudioBuffer
+): void {
+  const burst = (centreHz: number, decay: number, start: number, gain: number): void => {
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = centreHz;
+    band.Q.value = 1.4;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(gain, start);
+    env.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+    src.connect(band).connect(env).connect(destination);
+    src.start(start);
+    src.stop(start + decay + 0.02);
+  };
+
+  const tone = (
+    freq: number,
+    decay: number,
+    start: number,
+    gain: number,
+    type: OscillatorType = 'sine',
+    curve = 1
+  ): void => {
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.value = freq;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, start);
+    env.gain.exponentialRampToValueAtTime(gain, start + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, start + decay * curve);
+    osc.connect(env).connect(destination);
+    osc.start(start);
+    osc.stop(start + decay * curve + 0.02);
+  };
+
+  const knock = (k: Knock, start: number): void => {
+    burst(k.noiseHz, k.noiseDecay, start, 0.55 * k.level);
+    tone(k.freq, k.decay, start, 0.5 * k.level, 'sine');
+    tone(k.freq * 1.74, k.decay * 0.6, start, 0.2 * k.level, 'sine');
+    tone(k.freq * 2.83, k.decay * 0.35, start, 0.11 * k.level, 'sine');
+  };
+
+  switch (cue) {
+    case 'lift':
+      knock(WOOD_LIFT, at);
+      break;
+    case 'place':
+      knock(WOOD_PLACE, at);
+      break;
+    case 'capture':
+      // Two beats: the captured piece coming off, then the capturer landing.
+      knock({ ...WOOD_LIFT, level: 0.6, freq: 260 }, at);
+      knock(WOOD_HARD, at + 0.075);
+      break;
+    case 'check':
+      knock({ ...WOOD_PLACE, level: 0.55 }, at);
+      tone(740, 0.1, at + 0.01, 0.3, 'triangle');
+      tone(880, 0.13, at + 0.13, 0.32, 'triangle');
+      break;
+    case 'illegal':
+      // A dead, damped thud. No buzzer, no beep.
+      tone(96, 0.16, at, 0.42, 'sine', 0.5);
+      burst(320, 0.06, at, 0.28);
+      break;
+    case 'promotion':
+      knock({ ...WOOD_PLACE, freq: 196, level: 0.65 }, at);
+      knock({ ...WOOD_PLACE, freq: 262, level: 0.75 }, at + 0.09);
+      knock({ ...WOOD_PLACE, freq: 330, level: 0.9 }, at + 0.18);
+      tone(523, 0.28, at + 0.2, 0.18, 'triangle');
+      break;
+    case 'checkmate':
+      knock(WOOD_HARD, at);
+      tone(147, 0.5, at + 0.04, 0.26, 'sine');
+      tone(220, 0.45, at + 0.1, 0.2, 'triangle');
+      tone(110, 0.7, at + 0.18, 0.22, 'sine');
+      break;
+    case 'draw':
+      tone(330, 0.3, at, 0.2, 'sine');
+      tone(311, 0.42, at + 0.16, 0.2, 'sine');
+      break;
+    case 'danger':
+      burst(900, 0.035, at, 0.18);
+      tone(415, 0.12, at, 0.16, 'triangle');
+      tone(392, 0.18, at + 0.1, 0.16, 'triangle');
+      break;
+    case 'takeback':
+      knock({ ...WOOD_PLACE, freq: 262, level: 0.55 }, at);
+      knock({ ...WOOD_LIFT, freq: 196, level: 0.45 }, at + 0.07);
+      break;
+  }
+}
 
 export class SoundBoard {
   private ctx: AudioContext | null = null;
@@ -62,6 +195,15 @@ export class SoundBoard {
 
   constructor(settings: SoundSettings = { enabled: true, intensity: 0.7 }) {
     this.settings = settings;
+    // iOS suspends or "interrupts" an AudioContext when the app is backgrounded,
+    // a call arrives, or the screen locks, and it does not always come back on
+    // its own. Without this, sound works until the first interruption and then
+    // dies silently for the rest of the session.
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void this.resume();
+      });
+    }
   }
 
   update(settings: SoundSettings): void {
@@ -72,15 +214,21 @@ export class SoundBoard {
   }
 
   /**
-   * Create the audio context. Must be called from inside a user gesture, or iOS
-   * leaves it suspended; calling it again later is harmless.
+   * Create and resume the audio context. Must be called from inside a user
+   * gesture the first time, or iOS leaves it suspended.
    */
   async unlock(): Promise<void> {
-    const ctx = this.ensureContext();
-    if (ctx.state === 'suspended') await ctx.resume();
+    this.ensureContext();
+    await this.resume();
   }
 
-  /** True once audio can actually be heard. */
+  /** Current state, for the UI to tell the user when sound is not armed. */
+  state(): 'unarmed' | 'suspended' | 'running' | 'disabled' {
+    if (!this.settings.enabled) return 'disabled';
+    if (!this.ctx) return 'unarmed';
+    return this.ctx.state === 'running' ? 'running' : 'suspended';
+  }
+
   ready(): boolean {
     return this.ctx?.state === 'running';
   }
@@ -88,62 +236,25 @@ export class SoundBoard {
   play(cue: Cue): void {
     if (!this.settings.enabled) return;
     const ctx = this.ensureContext();
-    if (ctx.state !== 'running') return; // not unlocked yet; stay silent rather than queue
-    const t = ctx.currentTime;
+    const master = this.master;
+    const noise = this.noise;
+    if (!master || !noise) return;
 
-    switch (cue) {
-      case 'lift':
-        this.knock(WOOD_LIFT, t);
-        break;
-      case 'place':
-        this.knock(WOOD_PLACE, t);
-        break;
-      case 'capture':
-        // Two beats: the captured piece coming off, then the capturer landing.
-        this.knock({ ...WOOD_LIFT, level: 0.55, freq: 260 }, t);
-        this.knock(WOOD_HARD, t + 0.075);
-        break;
-      case 'check':
-        // Two tense pulses a minor third apart, over a dry knock.
-        this.knock({ ...WOOD_PLACE, level: 0.5 }, t);
-        this.tone(740, 0.1, t + 0.01, 0.28, 'triangle');
-        this.tone(880, 0.13, t + 0.13, 0.3, 'triangle');
-        break;
-      case 'illegal':
-        // A dead, damped thud. No buzzer, no beep.
-        this.tone(96, 0.16, t, 0.4, 'sine', 0.5);
-        this.burst(320, 0.06, t, 0.25);
-        break;
-      case 'promotion':
-        // Three rising knocks: something has become more than it was.
-        this.knock({ ...WOOD_PLACE, freq: 196, level: 0.6 }, t);
-        this.knock({ ...WOOD_PLACE, freq: 262, level: 0.7 }, t + 0.09);
-        this.knock({ ...WOOD_PLACE, freq: 330, level: 0.85 }, t + 0.18);
-        this.tone(523, 0.28, t + 0.2, 0.16, 'triangle');
-        break;
-      case 'checkmate':
-        // A composed close: firm knock, then a settling low fifth.
-        this.knock(WOOD_HARD, t);
-        this.tone(147, 0.5, t + 0.04, 0.24, 'sine');
-        this.tone(220, 0.45, t + 0.1, 0.18, 'triangle');
-        this.tone(110, 0.7, t + 0.18, 0.2, 'sine');
-        break;
-      case 'draw':
-        // Two level tones, going nowhere in particular.
-        this.tone(330, 0.3, t, 0.18, 'sine');
-        this.tone(311, 0.42, t + 0.16, 0.18, 'sine');
-        break;
-      case 'danger':
-        // A soft double tick with a rub in it, so it reads as "wait".
-        this.burst(900, 0.035, t, 0.16);
-        this.tone(415, 0.12, t, 0.14, 'triangle');
-        this.tone(392, 0.18, t + 0.1, 0.14, 'triangle');
-        break;
-      case 'takeback':
-        // The place knock, reversed in feel: quieter, falling.
-        this.knock({ ...WOOD_PLACE, freq: 262, level: 0.5 }, t);
-        this.knock({ ...WOOD_LIFT, freq: 196, level: 0.4 }, t + 0.07);
-        break;
+    // Schedule regardless of state, and kick a resume alongside it. Previously
+    // this bailed out whenever the context was not already running, which made
+    // the very first move of every session silent — the tap that unlocks audio
+    // is the same tap that plays the cue.
+    if (ctx.state !== 'running') void this.resume();
+    scheduleCue(ctx, master, cue, ctx.currentTime + 0.005, noise);
+  }
+
+  private async resume(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === 'running') return;
+    try {
+      await ctx.resume();
+    } catch {
+      // Not in a gesture yet; the next tap will get it.
     }
   }
 
@@ -165,78 +276,6 @@ export class SoundBoard {
   private level(): number {
     return this.settings.enabled ? 0.9 * clamp01(this.settings.intensity) : 0;
   }
-
-  /** A wooden knock: noise attack plus inharmonic damped body. */
-  private knock(k: Knock, at: number): void {
-    this.burst(k.noiseHz, k.noiseDecay, at, 0.5 * k.level);
-    // Inharmonic ratios: a struck block, not a tuned string.
-    this.tone(k.freq, k.decay, at, 0.45 * k.level, 'sine');
-    this.tone(k.freq * 1.74, k.decay * 0.6, at, 0.18 * k.level, 'sine');
-    this.tone(k.freq * 2.83, k.decay * 0.35, at, 0.1 * k.level, 'sine');
-  }
-
-  /** Band-passed noise burst — the click of contact. */
-  private burst(centreHz: number, decay: number, at: number, gain: number): void {
-    const ctx = this.ctx;
-    const master = this.master;
-    const noise = this.noise;
-    if (!ctx || !master || !noise) return;
-
-    const src = ctx.createBufferSource();
-    src.buffer = noise;
-    const band = ctx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.value = centreHz;
-    band.Q.value = 1.4;
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(gain, at);
-    env.gain.exponentialRampToValueAtTime(0.0001, at + decay);
-
-    src.connect(band).connect(env).connect(master);
-    src.start(at);
-    src.stop(at + decay + 0.02);
-  }
-
-  /** A damped partial. `curve` below 1 makes the decay snappier. */
-  private tone(
-    freq: number,
-    decay: number,
-    at: number,
-    gain: number,
-    type: OscillatorType = 'sine',
-    curve = 1
-  ): void {
-    const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
-
-    const osc = ctx.createOscillator();
-    osc.type = type;
-    osc.frequency.value = freq;
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.0001, at);
-    env.gain.exponentialRampToValueAtTime(gain, at + 0.004);
-    env.gain.exponentialRampToValueAtTime(0.0001, at + decay * curve);
-
-    osc.connect(env).connect(master);
-    osc.start(at);
-    osc.stop(at + decay * curve + 0.02);
-  }
-}
-
-function makeNoiseBuffer(ctx: AudioContext): AudioBuffer {
-  const length = Math.floor(ctx.sampleRate * 0.25);
-  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  // Slightly darkened noise: a one-pole low-pass over white noise reads as
-  // wood, where raw white noise reads as static.
-  let last = 0;
-  for (let i = 0; i < length; i++) {
-    const white = Math.random() * 2 - 1;
-    last = 0.65 * last + 0.35 * white;
-    data[i] = last;
-  }
-  return buffer;
 }
 
 function clamp01(x: number): number {

@@ -235,12 +235,31 @@ async function showHint(): Promise<void> {
   if (lastSnapshot) renderStatus(shell.status, lastSnapshot);
 }
 
-// Audio needs a gesture on iOS; the first touch anywhere unlocks it.
+/*
+ * Audio needs a user gesture on iOS. Two details matter and both were wrong at
+ * first:
+ *
+ *  - CAPTURE phase, so this runs before the board's own pointerdown handler.
+ *    In the bubble phase the board had already played the lift cue into a
+ *    still-suspended context, so the first move of a session was silent.
+ *  - keep listening until the context is actually running, rather than
+ *    unsubscribing after one attempt that may have failed.
+ */
 const unlock = (): void => {
-  void sound.unlock();
-  window.removeEventListener('pointerdown', unlock);
+  void sound.unlock().then(() => {
+    if (sound.ready()) {
+      window.removeEventListener('pointerdown', unlock, true);
+      window.removeEventListener('touchend', unlock, true);
+    }
+  });
 };
-window.addEventListener('pointerdown', unlock);
+window.addEventListener('pointerdown', unlock, true);
+window.addEventListener('touchend', unlock, true);
+
+// Small diagnostic surface. Worth keeping: "is the sound actually armed?" is
+// otherwise unanswerable from a phone, and silence has several innocent causes
+// (the ring/silent switch being the usual one).
+(window as unknown as { __soundState: () => string }).__soundState = () => sound.state();
 
 // Follow the system colour scheme without a reload.
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -249,7 +268,10 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 async function boot(): Promise<void> {
   await requestPersistence();
-  if ('serviceWorker' in navigator) {
+  // Only in a real build: sw.js is generated at build time, so in dev the
+  // request falls through to index.html and Chrome logs a MIME-type error that
+  // looks like a fault but is not one.
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     // Registration failing must never stop the app; it only costs offline use.
     navigator.serviceWorker.register('sw.js').catch(() => undefined);
   }
