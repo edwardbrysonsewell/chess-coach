@@ -207,6 +207,24 @@ export class GameController {
     this.emit();
   }
 
+  /**
+   * Jump the cursor back to the live position at the end of the game.
+   *
+   * Used when an action only makes sense there — asking for a hint while
+   * scrubbed through history would otherwise do nothing at all, with no
+   * explanation.
+   */
+  goToLive(): void {
+    this.tree.goToEnd();
+    this.redoDepth = 0;
+    this.emit();
+  }
+
+  /** Is the cursor on the live position rather than scrubbed back? */
+  isLive(): boolean {
+    return this.tree.current().children.length === 0;
+  }
+
   /** Every mainline move, for the move list. */
   mainlineMoves(): MoveInfo[] {
     return this.tree

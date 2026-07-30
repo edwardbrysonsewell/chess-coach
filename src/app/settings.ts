@@ -11,8 +11,14 @@ export interface Settings {
   showCoordinates: boolean;
   /** Legal-target dots under the selected piece. */
   showTargets: boolean;
-  /** Hints must be asked for; this only controls whether the button exists. */
+  /** Whether the hint control is available at all. */
   suggestionsEnabled: boolean;
+  /**
+   * When on, the hint arrow is drawn automatically for every one of your moves
+   * rather than only when asked. Bryson asked for this on 2026-07-30, replacing
+   * the original "never auto-shows" rule.
+   */
+  hintsAlwaysOn: boolean;
   dangerWarnings: boolean;
   coachEnabled: boolean;
   theme: 'classic' | 'high-contrast';
@@ -40,6 +46,7 @@ export const DEFAULTS: Settings = {
   showCoordinates: true,
   showTargets: true,
   suggestionsEnabled: true,
+  hintsAlwaysOn: false,
   dangerWarnings: true,
   coachEnabled: true,
   theme: 'classic',

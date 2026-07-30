@@ -194,6 +194,49 @@ try {
   })`);
   check('the game is saved to IndexedDB', savedGames >= 1, `${savedGames} saved game(s)`);
 
+  // --- 8a. hints are a toggle that stays on ---
+  const hintButton = 'document.querySelectorAll(".controls .btn")[2]';
+  check(
+    'hints start off',
+    (await page.eval(`${hintButton}.textContent`)) === 'Hint',
+    await page.eval(`${hintButton}.textContent`)
+  );
+  await page.eval(`${hintButton}.click()`);
+  await page.waitFor('document.querySelectorAll(".board-host line").length > 0', {
+    timeoutMs: 60_000,
+    label: 'hint arrow to be drawn',
+  });
+  check(
+    'turning hints on draws an arrow and stays on',
+    (await page.eval(`${hintButton}.textContent`)) === 'Hints on' &&
+      (await page.eval(`${hintButton}.dataset.on`)) === 'true'
+  );
+  check(
+    'the hint is explained in words',
+    ((await page.eval('document.querySelector(".coach").textContent')) ?? '').length > 20,
+    await page.eval('document.querySelector(".coach").textContent')
+  );
+  await page.screenshot(`${SHOTS}/16-hint-on.png`);
+
+  // Play a move; the arrow should come back by itself for the next one.
+  const hintMoveFrom = await at('d2');
+  const hintMoveTo = await at('d4');
+  await page.drag(hintMoveFrom, hintMoveTo);
+  await page.waitFor('document.querySelectorAll(".board-host line").length > 0', {
+    timeoutMs: 120_000,
+    label: 'the next hint to appear without being asked',
+  });
+  check('with hints on, the next hint appears unprompted', true);
+  await page.screenshot(`${SHOTS}/17-hint-auto.png`);
+
+  await page.eval(`${hintButton}.click()`);
+  await sleep(300);
+  check(
+    'turning hints off clears the arrow',
+    (await page.eval('document.querySelectorAll(".board-host line").length')) === 0 &&
+      (await page.eval(`${hintButton}.textContent`)) === 'Hint'
+  );
+
   // --- 8b. sound check reports a live output level ---
   await page.eval('[...document.querySelectorAll(".controls .btn")].at(-1).click()');
   await sleep(250);

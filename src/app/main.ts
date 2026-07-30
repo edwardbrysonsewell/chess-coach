@@ -25,7 +25,10 @@ import {
   renderStatus,
   showSheet,
 } from './ui.js';
-import type { Color, Square } from '../core/types.js';
+import type { Color, PieceSymbol, Square } from '../core/types.js';
+import { assessMove } from '../coach/danger.js';
+import { threatsAfter } from '../coach/motifs.js';
+import { hintSentence } from '../coach/language.js';
 
 /**
  * Bootstrap. Owns the long-lived pieces — engine, sound, settings — and rebuilds
@@ -47,6 +50,14 @@ let game: GameController | null = null;
 let board: BoardView | null = null;
 let currentGameId: number | null = null;
 let lastSnapshot: GameSnapshot | null = null;
+/**
+ * Moves already warned about, keyed by position and move. Bryson's rule: warn
+ * once, let him override, never block the move — so a move he has been warned
+ * about goes straight through the second time.
+ */
+const warned = new Set<string>();
+/** FEN a hint search is currently running for, so auto-hints do not stack up. */
+let hintInFlight: string | null = null;
 
 const root = document.getElementById('app');
 if (!root) throw new Error('#app missing from the document');
@@ -101,6 +112,18 @@ async function newGame(startFen?: string): Promise<void> {
         shell.buttons.takeBack.disabled = !snapshot.canTakeBack || snapshot.thinking;
         shell.buttons.redo.disabled = !snapshot.canRedo || snapshot.thinking;
         shell.buttons.hint.hidden = !settings.suggestionsEnabled;
+        shell.buttons.hint.dataset['on'] = String(settings.hintsAlwaysOn);
+        shell.buttons.hint.textContent = settings.hintsAlwaysOn ? 'Hints on' : 'Hint';
+        // With hints left on, draw the arrow for every move without being asked.
+        if (
+          settings.hintsAlwaysOn &&
+          settings.suggestionsEnabled &&
+          !snapshot.thinking &&
+          !snapshot.result &&
+          snapshot.turn === snapshot.humanColor
+        ) {
+          void showHint({ automatic: true });
+        }
       },
       onCue: (cue) => sound.play(cue),
       onPersist: () => void persist(controller, humanColor),
@@ -119,12 +142,14 @@ async function newGame(startFen?: string): Promise<void> {
         return controller.position().pieceAt(square)?.color === humanColor;
       },
       requestMove: async (from: Square, to: Square) => {
-        let promotion;
+        let promotion: PieceSymbol | undefined;
         if (controller.needsPromotion(from, to)) {
           const chosen = await askPromotion(shell.sheet, humanColor, theme());
           if (!chosen) return false;
           promotion = chosen;
         }
+        if (!(await passesDangerCheck(controller, from, to, promotion))) return false;
+        board?.clearArrows();
         const outcome = await controller.humanMove(from, to, promotion);
         return outcome === 'ok';
       },
@@ -170,8 +195,25 @@ shell.buttons.flip.addEventListener('click', () => board?.flip());
 // Rematch: same settings, fresh game. Sits under the thumb that just lost.
 shell.endgame.rematch.addEventListener('click', () => void newGame());
 
+/*
+ * The hint control is a toggle (Bryson, 2026-07-30). Tapping it turns hints on
+ * and they stay on, drawing the arrow for every move until turned off again.
+ */
 shell.buttons.hint.addEventListener('click', () => {
-  void showHint();
+  settings = { ...settings, hintsAlwaysOn: !settings.hintsAlwaysOn };
+  saveSettings(settings);
+  shell.buttons.hint.dataset['on'] = String(settings.hintsAlwaysOn);
+  shell.buttons.hint.textContent = settings.hintsAlwaysOn ? 'Hints on' : 'Hint';
+  if (settings.hintsAlwaysOn) {
+    // "Show me the hint for my next move" only means anything at the live
+    // position, so come back from any scrubbing first rather than silently
+    // doing nothing.
+    if (game && !game.isLive()) game.goToLive();
+    void showHint({ automatic: false });
+  } else {
+    board?.clearArrows();
+    shell.coach.hidden = true;
+  }
 });
 
 shell.buttons.menu.addEventListener('click', () => {
@@ -311,25 +353,133 @@ function showSoundCheck(): void {
   });
 }
 
-async function showHint(): Promise<void> {
+/**
+ * Draw the engine's preferred move as an arrow, and explain it in the coach
+ * strip. `automatic` runs stay quiet about failure: with hints left on, a hint
+ * that cannot be produced should simply not appear rather than nag.
+ */
+async function showHint({ automatic }: { automatic: boolean }): Promise<void> {
   const controller = game;
   const activeEngine = engine;
   if (!controller || !activeEngine || controller.result()) return;
   if (controller.turn() !== controller.humanColor()) return;
 
-  board?.clearArrows();
-  shell.status.textContent = 'Looking…';
-  const lines = await activeEngine.evaluate(controller.position().fen(), {
-    multiPv: 1,
-    depth: 12,
-  });
+  const fenAtRequest = controller.position().fen();
+  if (hintInFlight === fenAtRequest) return; // already looking at this position
+  hintInFlight = fenAtRequest;
+  if (!automatic) shell.status.textContent = 'Looking…';
+
+  let lines;
+  try {
+    lines = await activeEngine.evaluate(fenAtRequest, { multiPv: 1, depth: 12 });
+  } finally {
+    hintInFlight = null;
+  }
+  // The game may have moved on while the engine was thinking.
+  if (!game || game !== controller || controller.position().fen() !== fenAtRequest) return;
+
   const best = lines[0]?.moves[0];
   if (!best) {
     if (lastSnapshot) renderStatus(shell.status, lastSnapshot);
     return;
   }
+  board?.clearArrows();
   board?.drawArrow(best.slice(0, 2), best.slice(2, 4));
+
+  // Explain it with the same detector the warnings use.
+  const position = controller.position();
+  const probe = position.clone();
+  const played = probe.play({
+    from: best.slice(0, 2),
+    to: best.slice(2, 4),
+    ...(best.length > 4 ? { promotion: best[4] as PieceSymbol } : {}),
+  });
+  if (played) {
+    const motifs = threatsAfter(position, best, controller.humanColor());
+    shell.coach.hidden = false;
+    shell.coach.textContent = hintSentence(
+      probe,
+      played.san,
+      motifs,
+      played.isCapture,
+      played.isCheck
+    );
+  }
   if (lastSnapshot) renderStatus(shell.status, lastSnapshot);
+}
+
+/**
+ * Run the danger check before a move is committed.
+ *
+ * Returns true if the move should proceed. A warned-about move is remembered, so
+ * playing it again goes straight through: warn once, allow the override, never
+ * block the move.
+ */
+async function passesDangerCheck(
+  controller: GameController,
+  from: Square,
+  to: Square,
+  promotion: PieceSymbol | undefined
+): Promise<boolean> {
+  const activeEngine = engine;
+  if (!settings.dangerWarnings || !activeEngine) return true;
+  const position = controller.position();
+  const key = `${position.fen()}|${from}${to}${promotion ?? ''}`;
+  if (warned.has(key)) return true;
+
+  let warning;
+  try {
+    warning = await assessMove(activeEngine, position, from, to, promotion, {
+      elo: settings.elo,
+    });
+  } catch {
+    return true; // a failing check must never stop a game
+  }
+  if (!warning) return true;
+
+  warned.add(key);
+  sound.play('danger');
+  for (const square of warning.highlight) board?.pulse(square);
+  const message = warning.message;
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    showSheet(shell.sheet, 'Have another look', (body, close) => {
+      const text = document.createElement('p');
+      text.className = 'sound-verdict';
+      text.dataset['tone'] = 'good';
+      text.textContent = message;
+
+      const pickAnother = document.createElement('button');
+      pickAnother.className = 'btn primary wide';
+      pickAnother.textContent = 'Let me pick another move';
+      pickAnother.addEventListener('click', () => {
+        settled = true;
+        close();
+        resolve(false);
+      });
+
+      const playAnyway = document.createElement('button');
+      playAnyway.className = 'btn wide';
+      playAnyway.textContent = 'Play it anyway';
+      playAnyway.addEventListener('click', () => {
+        settled = true;
+        close();
+        resolve(true);
+      });
+
+      body.append(text, pickAnother, playAnyway);
+
+      // Dismissing the sheet counts as "let me think again".
+      const observer = new MutationObserver(() => {
+        if (shell.sheet.hidden) {
+          observer.disconnect();
+          if (!settled) resolve(false);
+        }
+      });
+      observer.observe(shell.sheet, { attributes: true, attributeFilter: ['hidden'] });
+    });
+  });
 }
 
 /*

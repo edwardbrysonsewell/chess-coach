@@ -197,15 +197,54 @@ export class SoundBoard {
 
   constructor(settings: SoundSettings = { enabled: true, intensity: 0.7 }) {
     this.settings = settings;
-    // iOS suspends or "interrupts" an AudioContext when the app is backgrounded,
-    // a call arrives, or the screen locks, and it does not always come back on
-    // its own. Without this, sound works until the first interruption and then
-    // dies silently for the rest of the session.
+    /*
+     * iOS suspends or "interrupts" an AudioContext for all sorts of reasons: the
+     * app going to the background, the screen locking, a call, Siri, another app
+     * taking the audio session. It does not reliably come back on its own.
+     *
+     * Recovery therefore has to be belt and braces, because the failure is
+     * silent and ruins the rest of the game:
+     *   - on the page becoming visible again;
+     *   - on the context's own statechange;
+     *   - and on ANY tap, permanently. This listener is deliberately never
+     *     removed. An earlier version unsubscribed once audio was working, so a
+     *     context that died mid-game could only be revived by backgrounding and
+     *     returning to the app — which is exactly "the sound stopped part way
+     *     through a game and never came back".
+     */
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') void this.resume();
+        if (document.visibilityState === 'visible') void this.recover();
       });
     }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointerdown', () => void this.recover(), {
+        capture: true,
+        passive: true,
+      });
+    }
+  }
+
+  /**
+   * Bring audio back if it has died. Cheap enough to call on every tap: it does
+   * nothing at all when the context is already running.
+   */
+  private async recover(): Promise<void> {
+    if (!this.settings.enabled) return;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (ctx.state === 'running') return;
+    // A closed context can never be resumed; only a new one will do.
+    if (ctx.state === 'closed') {
+      this.ctx = null;
+      this.master = null;
+      this.analyser = null;
+      this.noise = null;
+      this.ensureContext();
+      await this.resume();
+      return;
+    }
+    await this.resume();
   }
 
   update(settings: SoundSettings): void {
@@ -327,6 +366,11 @@ export class SoundBoard {
     analyser.fftSize = 2048;
     master.connect(analyser);
     analyser.connect(ctx.destination);
+    // If the context ever leaves the running state, try to bring it straight
+    // back. Safari fires this when an interruption begins and ends.
+    ctx.addEventListener('statechange', () => {
+      if (ctx.state !== 'running') void this.resume();
+    });
     this.ctx = ctx;
     this.master = master;
     this.analyser = analyser;

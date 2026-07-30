@@ -395,3 +395,10 @@ input[type='range'] {
   min-width: 116px;
   min-height: 44px;
 }
+
+/* A toggle that is currently on — the hint button when hints stay on. */
+.btn[data-on='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
