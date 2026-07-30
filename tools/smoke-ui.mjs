@@ -194,6 +194,59 @@ try {
   })`);
   check('the game is saved to IndexedDB', savedGames >= 1, `${savedGames} saved game(s)`);
 
+  // --- 8b. sound check reports a live output level ---
+  await page.eval('[...document.querySelectorAll(".controls .btn")].at(-1).click()');
+  await sleep(250);
+  await page.eval(
+    '[...document.querySelectorAll(".sheet .btn")].find(b => b.textContent === "Sound check").click()'
+  );
+  await sleep(300);
+  check(
+    'sound check panel opens',
+    (await page.eval('!!document.querySelector(".meter")')) === true
+  );
+  await page.eval('document.querySelector(".sheet .btn.primary").click()');
+  await sleep(900);
+  const soundPeak = await page.eval(`(() => {
+    const rows = [...document.querySelectorAll('.sound-detail-row')];
+    const row = rows.find(r => r.firstChild.textContent === 'highest level seen');
+    return row ? Number(row.lastChild.textContent) : -1;
+  })()`);
+  check(
+    'the sound check measures real output',
+    soundPeak > 0.01,
+    `highest level seen ${soundPeak}`
+  );
+  await page.screenshot(`${SHOTS}/13-sound-check.png`);
+  await page.eval('[...document.querySelectorAll(".sheet .btn")].at(-1).click()');
+  await sleep(200);
+
+  // --- 8c. a finished game offers a rematch ---
+  check(
+    'no rematch bar while the game is live',
+    (await page.eval('document.querySelector(".endgame").hidden')) === true
+  );
+  await page.eval('[...document.querySelectorAll(".controls .btn")].at(-1).click()');
+  await sleep(250);
+  await page.eval(
+    '[...document.querySelectorAll(".sheet .btn")].find(b => b.textContent === "Resign").click()'
+  );
+  await sleep(500);
+  const endgameShown = await page.eval('!document.querySelector(".endgame").hidden');
+  const endgameText = await page.eval('document.querySelector(".endgame-text").textContent');
+  check('a finished game shows a rematch bar', endgameShown, endgameText);
+  await page.screenshot(`${SHOTS}/14-game-over.png`);
+  await page.eval('document.querySelector(".endgame .btn").click()');
+  await page.waitFor(
+    'document.querySelectorAll(".ply:not(.start)").length === 0 && document.querySelector(".endgame").hidden',
+    { timeoutMs: 60_000, label: 'a fresh game after rematch' }
+  );
+  check(
+    'rematch starts a fresh game',
+    (await page.eval('document.querySelectorAll(".board-host image").length')) === 32
+  );
+  await page.screenshot(`${SHOTS}/15-after-rematch.png`);
+
   // --- 9. dark mode is first-class, not an afterthought ---
   await page.setColorScheme('dark');
   await sleep(300);

@@ -191,6 +191,8 @@ export class SoundBoard {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
+  private analyser: AnalyserNode | null = null;
+  private meterBuffer: Float32Array<ArrayBuffer> | null = null;
   private settings: SoundSettings;
 
   constructor(settings: SoundSettings = { enabled: true, intensity: 0.7 }) {
@@ -258,6 +260,60 @@ export class SoundBoard {
     }
   }
 
+  /**
+   * Signal level currently leaving the master bus, 0 to 1.
+   *
+   * This is the diagnostic that separates "the app is not making sound" from
+   * "the phone is not playing it". If this reads above zero while nothing can be
+   * heard, the fault is the ring/silent switch or the media volume, and no
+   * amount of changing this code will help.
+   */
+  meter(): number {
+    const analyser = this.analyser;
+    const buffer = this.meterBuffer;
+    if (!analyser || !buffer) return 0;
+    analyser.getFloatTimeDomainData(buffer);
+    let peak = 0;
+    for (const sample of buffer) peak = Math.max(peak, Math.abs(sample));
+    return peak;
+  }
+
+  /** A deliberately loud, long tone for the sound check. */
+  testTone(seconds = 2): void {
+    const ctx = this.ensureContext();
+    const master = this.master;
+    if (!master) return;
+    if (ctx.state !== 'running') void this.resume();
+    const at = ctx.currentTime + 0.02;
+    for (const [freq, gain] of [
+      [440, 0.5],
+      [660, 0.25],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, at);
+      env.gain.exponentialRampToValueAtTime(gain, at + 0.02);
+      env.gain.setValueAtTime(gain, at + seconds - 0.05);
+      env.gain.exponentialRampToValueAtTime(0.0001, at + seconds);
+      osc.connect(env).connect(master);
+      osc.start(at);
+      osc.stop(at + seconds + 0.02);
+    }
+  }
+
+  /** Everything worth knowing when sound is not working. */
+  diagnostics(): Record<string, string> {
+    return {
+      'sound setting': this.settings.enabled ? 'on' : 'off',
+      volume: this.settings.intensity.toFixed(2),
+      'audio context': this.ctx ? this.ctx.state : 'not created yet',
+      'sample rate': this.ctx ? `${this.ctx.sampleRate} Hz` : '—',
+      'output level': this.meter().toFixed(3),
+    };
+  }
+
   private ensureContext(): AudioContext {
     if (this.ctx) return this.ctx;
     const Ctor: typeof AudioContext =
@@ -266,9 +322,15 @@ export class SoundBoard {
     const ctx = new Ctor();
     const master = ctx.createGain();
     master.gain.value = this.level();
-    master.connect(ctx.destination);
+    // Tap the master bus so the level can be measured on the device itself.
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    master.connect(analyser);
+    analyser.connect(ctx.destination);
     this.ctx = ctx;
     this.master = master;
+    this.analyser = analyser;
+    this.meterBuffer = new Float32Array(analyser.fftSize);
     this.noise = makeNoiseBuffer(ctx);
     return ctx;
   }

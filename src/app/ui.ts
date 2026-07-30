@@ -28,6 +28,8 @@ export interface ShellElements {
   };
   coach: HTMLElement;
   sheet: HTMLElement;
+  /** Appears only when the game is over. */
+  endgame: { host: HTMLElement; text: HTMLElement; rematch: HTMLButtonElement };
 }
 
 export function buildShell(root: HTMLElement): ShellElements {
@@ -66,7 +68,15 @@ export function buildShell(root: HTMLElement): ShellElements {
   const sheet = el('div', 'sheet');
   sheet.hidden = true;
 
-  root.append(status, clocks, boardHost, coach, moveList, controls, sheet);
+  // Shown only when a game ends, right above the controls so the obvious next
+  // action is under the thumb that just finished the game.
+  const endgameHost = el('div', 'endgame');
+  endgameHost.hidden = true;
+  const endgameText = el('span', 'endgame-text');
+  const rematch = button('Rematch', 'primary');
+  endgameHost.append(endgameText, rematch);
+
+  root.append(status, clocks, boardHost, coach, moveList, endgameHost, controls, sheet);
 
   return {
     root,
@@ -77,7 +87,23 @@ export function buildShell(root: HTMLElement): ShellElements {
     buttons: { takeBack, redo, hint, flip, menu },
     coach,
     sheet,
+    endgame: { host: endgameHost, text: endgameText, rematch },
   };
+}
+
+/** Show or hide the end-of-game bar. */
+export function renderEndgame(
+  elements: ShellElements['endgame'],
+  snapshot: GameSnapshot
+): void {
+  if (!snapshot.result) {
+    elements.host.hidden = true;
+    return;
+  }
+  elements.host.hidden = false;
+  // Capitalise the reason so it reads as a headline, not a fragment.
+  const reason = snapshot.result.reason;
+  elements.text.textContent = reason.charAt(0).toUpperCase() + reason.slice(1);
 }
 
 /** Render the status line: whose move, what happened, or the result. */

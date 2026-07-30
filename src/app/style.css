@@ -293,6 +293,40 @@ input[type='range'] {
   accent-color: var(--accent);
 }
 
+.sound-verdict {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.sound-verdict[data-tone='good'] {
+  color: var(--text);
+}
+.meter {
+  height: 18px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.meter-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 80ms linear;
+}
+.sound-details {
+  font: 13px/1.6 ui-monospace, SFMono-Regular, monospace;
+  color: var(--muted);
+}
+.sound-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 3px 0;
+}
+
 .promo-row {
   display: flex;
   gap: 10px;
@@ -339,4 +373,25 @@ input[type='range'] {
   .btn:active {
     transform: none;
   }
+}
+
+/* End-of-game bar: only present when there is a result to act on. */
+.endgame {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 10px 10px 14px;
+}
+.endgame-text {
+  flex: 1;
+  font-weight: 600;
+  font-size: 15px;
+}
+.endgame .btn {
+  flex: 0 0 auto;
+  min-width: 116px;
+  min-height: 44px;
 }

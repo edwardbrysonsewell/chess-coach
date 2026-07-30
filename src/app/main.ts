@@ -20,6 +20,7 @@ import {
   buildSettingsPanel,
   buildShell,
   renderClocks,
+  renderEndgame,
   renderMoveList,
   renderStatus,
   showSheet,
@@ -30,6 +31,10 @@ import type { Color, Square } from '../core/types.js';
  * Bootstrap. Owns the long-lived pieces — engine, sound, settings — and rebuilds
  * a GameController whenever a new game starts.
  */
+
+declare const __BUILD_ID__: string;
+/** Build stamp, shown in the sound check so "am I running the new version?" is answerable. */
+const BUILD = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 
 let settings = loadSettings();
 let sound = new SoundBoard({
@@ -87,6 +92,7 @@ async function newGame(startFen?: string): Promise<void> {
         board?.setPosition(new Position(snapshot.fen), snapshot.lastMove);
         renderStatus(shell.status, snapshot);
         renderClocks(shell.clocks, snapshot);
+        renderEndgame(shell.endgame, snapshot);
         renderMoveList(shell.moveList, snapshot.moves, snapshot.cursor, (ply) => {
           const path = controller.tree.mainline();
           const node = path[ply + 1];
@@ -161,6 +167,9 @@ shell.buttons.takeBack.addEventListener('click', () => {
 shell.buttons.redo.addEventListener('click', () => void game?.redo());
 shell.buttons.flip.addEventListener('click', () => board?.flip());
 
+// Rematch: same settings, fresh game. Sits under the thumb that just lost.
+shell.endgame.rematch.addEventListener('click', () => void newGame());
+
 shell.buttons.hint.addEventListener('click', () => {
   void showHint();
 });
@@ -183,11 +192,19 @@ shell.buttons.menu.addEventListener('click', () => {
       game?.resign();
     });
 
+    const soundCheckButton = document.createElement('button');
+    soundCheckButton.className = 'btn wide';
+    soundCheckButton.textContent = 'Sound check';
+    soundCheckButton.addEventListener('click', () => {
+      close();
+      showSoundCheck();
+    });
+
     const heading = document.createElement('h3');
     heading.className = 'sheet-subtitle';
     heading.textContent = 'Settings';
 
-    body.append(newGameButton, resignButton, heading);
+    body.append(newGameButton, resignButton, soundCheckButton, heading);
     buildSettingsPanel(body, settings, (patch) => {
       const needsNewGame =
         ('elo' in patch && patch.elo !== settings.elo) ||
@@ -213,6 +230,86 @@ shell.buttons.menu.addEventListener('click', () => {
     });
   });
 });
+
+/**
+ * The sound check. Its job is to answer one question on the device itself: is
+ * the app producing audio, or is the phone not playing it?
+ *
+ * The live meter reads the signal leaving the master bus. If it moves while
+ * nothing can be heard, the app is fine and the fault is the ring/silent switch
+ * or the media volume — which is not something the code can fix, and is worth
+ * saying plainly rather than shipping another speculative audio patch.
+ */
+function showSoundCheck(): void {
+  showSheet(shell.sheet, 'Sound check', (body, close) => {
+    const verdict = document.createElement('p');
+    verdict.className = 'sound-verdict';
+    verdict.textContent = 'Tap the button and watch the bar.';
+
+    const meterWrap = document.createElement('div');
+    meterWrap.className = 'meter';
+    const meterFill = document.createElement('div');
+    meterFill.className = 'meter-fill';
+    meterWrap.append(meterFill);
+
+    const play = document.createElement('button');
+    play.className = 'btn primary wide';
+    play.textContent = 'Play a test sound';
+
+    const details = document.createElement('div');
+    details.className = 'sound-details';
+
+    let peakSeen = 0;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const refresh = (): void => {
+      const level = sound.meter();
+      peakSeen = Math.max(peakSeen, level);
+      meterFill.style.width = `${Math.min(100, level * 140)}%`;
+      const rows = { ...sound.diagnostics(), 'highest level seen': peakSeen.toFixed(3), build: BUILD };
+      details.replaceChildren(
+        ...Object.entries(rows).map(([key, value]) => {
+          const row = document.createElement('div');
+          row.className = 'sound-detail-row';
+          const k = document.createElement('span');
+          k.textContent = key;
+          const v = document.createElement('span');
+          v.textContent = value;
+          row.append(k, v);
+          return row;
+        })
+      );
+      if (peakSeen > 0.01) {
+        verdict.textContent =
+          'The app IS producing sound. If you cannot hear it, the phone is muting it: ' +
+          'check the ring/silent switch on the left edge, then press volume-up WHILE the ' +
+          'test sound is playing (the volume buttons only change media volume during playback).';
+        verdict.dataset['tone'] = 'good';
+      }
+    };
+
+    play.addEventListener('click', () => {
+      void sound.unlock().then(() => {
+        sound.testTone(3);
+        sound.play('capture');
+      });
+      if (timer === null) timer = setInterval(refresh, 100);
+    });
+
+    body.append(verdict, meterWrap, play, details);
+    refresh();
+
+    // Stop polling when the sheet closes.
+    const observer = new MutationObserver(() => {
+      if (shell.sheet.hidden) {
+        if (timer !== null) clearInterval(timer);
+        observer.disconnect();
+      }
+    });
+    observer.observe(shell.sheet, { attributes: true, attributeFilter: ['hidden'] });
+    void close;
+  });
+}
 
 async function showHint(): Promise<void> {
   const controller = game;
@@ -274,6 +371,19 @@ async function boot(): Promise<void> {
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     // Registration failing must never stop the app; it only costs offline use.
     navigator.serviceWorker.register('sw.js').catch(() => undefined);
+
+    /*
+     * A cache-first worker serves the OLD build until the new one takes over,
+     * which normally means a fix needs two reloads to appear — and looks exactly
+     * like the fix not working. The new worker calls skipWaiting, so when it
+     * takes control we reload once, automatically.
+     */
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
   }
   await newGame();
 }
