@@ -77,13 +77,34 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
+
+      /*
+       * The HTML shell is network-first, everything else cache-first.
+       *
+       * Asset filenames are content-hashed, so serving them from cache forever
+       * is safe. The shell is not hashed: if a stale copy is served it can point
+       * at script filenames that no longer exist, and the app boots to a white
+       * screen with no way back from a phone. Fetching it fresh when the network
+       * is there — and falling straight back to cache when it is not — keeps
+       * offline working without that failure mode.
+       */
+      if (request.mode === 'navigate') {
+        try {
+          const fresh = await fetch(request);
+          if (fresh.ok) {
+            cache.put(request, fresh.clone());
+            return fresh;
+          }
+        } catch {
+          // Offline; fall through to the cache.
+        }
+        const cachedShell =
+          (await cache.match(request, { ignoreSearch: true })) ?? (await cache.match('./'));
+        if (cachedShell) return cachedShell;
+      }
+
       const hit = await cache.match(request, { ignoreSearch: true });
       if (hit) return hit;
-      // A navigation to any in-scope path is the app shell.
-      if (request.mode === 'navigate') {
-        const shell = await cache.match('./');
-        if (shell) return shell;
-      }
       try {
         const response = await fetch(request);
         if (response.ok) cache.put(request, response.clone());

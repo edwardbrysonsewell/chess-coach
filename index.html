@@ -16,6 +16,76 @@
 </head>
 <body>
 <div id="app"></div>
+<noscript>This app needs JavaScript.</noscript>
 <script type="module" src="/src/app/main.ts"></script>
+<script>
+/*
+ * Boot watchdog.
+ *
+ * If the app fails to start — a bad cache, a script that never arrives, an
+ * error before the first render — the user gets a blank white screen with
+ * nothing to tap. That happened once and there was no way back from the phone.
+ * So: if nothing has rendered after a few seconds, show a plain message and a
+ * button that clears the service worker and every cache, then reloads.
+ *
+ * Deliberately inline, dependency-free, and outside the module graph, so it
+ * still runs when the module graph is exactly what is broken.
+ */
+(function () {
+  var TIMEOUT_MS = 9000;
+  function rescueScreen(detail) {
+    if (document.getElementById('rescue')) return;
+    var wrap = document.createElement('div');
+    wrap.id = 'rescue';
+    wrap.setAttribute('style',
+      'position:fixed;inset:0;display:flex;flex-direction:column;gap:14px;' +
+      'align-items:center;justify-content:center;padding:24px;text-align:center;' +
+      'font:17px/1.45 -apple-system,system-ui,sans-serif;background:#11151a;color:#eef2f6;z-index:9999');
+    var h = document.createElement('h1');
+    h.textContent = 'Chess Coach did not start';
+    h.setAttribute('style', 'font-size:20px;margin:0');
+    var p = document.createElement('p');
+    p.textContent = 'Something in the stored copy of the app is broken. Resetting clears it and reloads — your saved games are not affected.';
+    p.setAttribute('style', 'margin:0;opacity:.8;max-width:34ch');
+    var b = document.createElement('button');
+    b.textContent = 'Reset and reload';
+    b.setAttribute('style',
+      'font:600 17px/1 inherit;padding:16px 22px;border-radius:12px;border:0;' +
+      'background:#5b93ff;color:#0b1017;min-width:220px');
+    b.onclick = function () {
+      b.textContent = 'Resetting…';
+      var done = function () { location.reload(); };
+      var jobs = [];
+      if (window.caches && caches.keys) {
+        jobs.push(caches.keys().then(function (names) {
+          return Promise.all(names.map(function (n) { return caches.delete(n); }));
+        }));
+      }
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.map(function (r) { return r.unregister(); }));
+        }));
+      }
+      Promise.all(jobs).then(done, done);
+    };
+    var small = document.createElement('p');
+    small.textContent = detail || '';
+    small.setAttribute('style', 'margin:0;opacity:.45;font-size:12px;max-width:34ch;word-break:break-word');
+    wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(b); wrap.appendChild(small);
+    document.body.appendChild(wrap);
+  }
+  window.addEventListener('error', function (e) {
+    if (!window.__appBooted) rescueScreen(e && e.message ? String(e.message) : '');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    if (!window.__appBooted) {
+      rescueScreen(e && e.reason ? String(e.reason && e.reason.message || e.reason) : '');
+    }
+  });
+  setTimeout(function () {
+    if (!window.__appBooted) rescueScreen('The app did not render within ' + (TIMEOUT_MS / 1000) + ' seconds.');
+  }, TIMEOUT_MS);
+})();
+</script>
 </body>
 </html>

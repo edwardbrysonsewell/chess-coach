@@ -64,6 +64,9 @@ let hintInFlight: string | null = null;
 const root = document.getElementById('app');
 if (!root) throw new Error('#app missing from the document');
 const shell = buildShell(root);
+// Tells the boot watchdog in index.html that the app rendered. Without this it
+// shows a rescue screen after a few seconds.
+(window as unknown as { __appBooted: boolean }).__appBooted = true;
 
 function theme(): BoardTheme {
   return THEMES[settings.theme] as BoardTheme;
