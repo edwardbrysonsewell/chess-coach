@@ -279,7 +279,33 @@ try {
   const endgameText = await page.eval('document.querySelector(".endgame-text").textContent');
   check('a finished game shows a rematch bar', endgameShown, endgameText);
   await page.screenshot(`${SHOTS}/14-game-over.png`);
-  await page.eval('document.querySelector(".endgame .btn").click()');
+  // --- 8d. the post-game review ---
+  await page.eval(
+    '[...document.querySelectorAll(".endgame .btn")].find(b => b.textContent === "Review").click()'
+  );
+  await page.waitFor('document.querySelector(".review-accuracy") !== null', {
+    timeoutMs: 180_000,
+    label: 'the review to finish analysing',
+  });
+  const accuracy = await page.eval(
+    'document.querySelector(".review-accuracy-value").textContent'
+  );
+  check('the review reports an accuracy figure', /%$/.test(accuracy ?? ''), accuracy);
+  check(
+    'the review draws an evaluation graph',
+    (await page.eval('document.querySelectorAll(".review-graph svg path").length')) >= 2
+  );
+  const summary = await page.eval('document.querySelector(".review-summary").textContent');
+  check('the review summarises the game in words', (summary ?? '').length > 30, summary);
+  const opening = await page.eval(
+    'document.querySelector(".review-block-title")?.textContent ?? ""'
+  );
+  check('the review names the opening', /\(?[A-E]\d\d\)?/.test(opening), opening);
+  await page.screenshot(`${SHOTS}/18-review.png`);
+  await page.eval('[...document.querySelectorAll(".sheet .btn")].at(-1).click()');
+  await sleep(300);
+
+  await page.eval('[...document.querySelectorAll(".endgame .btn")].find(b => b.textContent === "Rematch").click()');
   await page.waitFor(
     'document.querySelectorAll(".ply:not(.start)").length === 0 && document.querySelector(".endgame").hidden',
     { timeoutMs: 60_000, label: 'a fresh game after rematch' }

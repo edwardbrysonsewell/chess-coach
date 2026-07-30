@@ -27,6 +27,8 @@ import {
 } from './ui.js';
 import type { Color, PieceSymbol, Square } from '../core/types.js';
 import { assessMove } from '../coach/danger.js';
+import { reviewGame } from '../coach/review.js';
+import { buildReview } from './review-ui.js';
 import { threatsAfter } from '../coach/motifs.js';
 import { hintSentence } from '../coach/language.js';
 
@@ -194,6 +196,7 @@ shell.buttons.flip.addEventListener('click', () => board?.flip());
 
 // Rematch: same settings, fresh game. Sits under the thumb that just lost.
 shell.endgame.rematch.addEventListener('click', () => void newGame());
+shell.endgame.review.addEventListener('click', () => void showReview());
 
 /*
  * The hint control is a toggle (Bryson, 2026-07-30). Tapping it turns hints on
@@ -358,6 +361,65 @@ function showSoundCheck(): void {
  * strip. `automatic` runs stay quiet about failure: with hints left on, a hint
  * that cannot be produced should simply not appear rather than nag.
  */
+/**
+ * Post-game review: walk the whole game with the engine, then show the result.
+ *
+ * The analysis is the slow part (a couple of hundred milliseconds per move on a
+ * phone), so progress is reported while it runs rather than leaving a dead
+ * screen.
+ */
+async function showReview(): Promise<void> {
+  const controller = game;
+  const activeEngine = engine;
+  if (!controller || !activeEngine) return;
+  const moves = controller.mainlineMoves();
+  if (!moves.length) return;
+
+  let cancelled = false;
+  showSheet(shell.sheet, 'Game review', (body) => {
+    const progress = document.createElement('p');
+    progress.className = 'review-text';
+    progress.textContent = `Analysing ${moves.length} moves…`;
+    body.append(progress);
+    const observer = new MutationObserver(() => {
+      if (shell.sheet.hidden) {
+        cancelled = true;
+        observer.disconnect();
+      }
+    });
+    observer.observe(shell.sheet, { attributes: true, attributeFilter: ['hidden'] });
+    void (async () => {
+      try {
+        const review = await reviewGame(
+          activeEngine,
+          controller.tree.fenAtStart(),
+          moves,
+          {
+            humanColor: controller.humanColor(),
+            elo: settings.elo,
+            onProgress: (done, total) => {
+              progress.textContent = `Analysing move ${done} of ${total}…`;
+            },
+          }
+        );
+        if (cancelled || shell.sheet.hidden) return;
+        body.replaceChildren();
+        buildReview(body, review, controller.humanColor(), (ply) => {
+          const node = controller.tree.mainline()[ply + 1];
+          if (node) {
+            controller.goTo(node);
+            shell.sheet.hidden = true;
+          }
+        });
+      } catch (error) {
+        progress.textContent = `The review could not be completed: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      }
+    })();
+  });
+}
+
 async function showHint({ automatic }: { automatic: boolean }): Promise<void> {
   const controller = game;
   const activeEngine = engine;

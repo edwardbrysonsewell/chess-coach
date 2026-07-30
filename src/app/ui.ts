@@ -29,7 +29,12 @@ export interface ShellElements {
   coach: HTMLElement;
   sheet: HTMLElement;
   /** Appears only when the game is over. */
-  endgame: { host: HTMLElement; text: HTMLElement; rematch: HTMLButtonElement };
+  endgame: {
+    host: HTMLElement;
+    text: HTMLElement;
+    rematch: HTMLButtonElement;
+    review: HTMLButtonElement;
+  };
 }
 
 export function buildShell(root: HTMLElement): ShellElements {
@@ -74,7 +79,8 @@ export function buildShell(root: HTMLElement): ShellElements {
   endgameHost.hidden = true;
   const endgameText = el('span', 'endgame-text');
   const rematch = button('Rematch', 'primary');
-  endgameHost.append(endgameText, rematch);
+  const review = button('Review');
+  endgameHost.append(endgameText, review, rematch);
 
   root.append(status, clocks, boardHost, coach, moveList, endgameHost, controls, sheet);
 
@@ -87,7 +93,7 @@ export function buildShell(root: HTMLElement): ShellElements {
     buttons: { takeBack, redo, hint, flip, menu },
     coach,
     sheet,
-    endgame: { host: endgameHost, text: endgameText, rematch },
+    endgame: { host: endgameHost, text: endgameText, rematch, review },
   };
 }
 
@@ -109,7 +115,8 @@ export function renderEndgame(
 /** Render the status line: whose move, what happened, or the result. */
 export function renderStatus(el: HTMLElement, snapshot: GameSnapshot): void {
   if (snapshot.result) {
-    el.textContent = `${snapshot.result.reason} (${snapshot.result.text})`;
+    const reason = snapshot.result.reason;
+    el.textContent = `${reason.charAt(0).toUpperCase()}${reason.slice(1)} (${snapshot.result.text})`;
     el.dataset['tone'] = 'result';
     return;
   }
