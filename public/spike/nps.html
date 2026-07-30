@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Spike 2 — Stockfish WASM on this device</title>
+<style>
+  :root { color-scheme: light dark; font: 17px/1.45 -apple-system, system-ui, sans-serif; }
+  body { margin: 0; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; opacity: .65; font-size: 14px; }
+  button { font: inherit; font-weight: 600; padding: 14px 18px; width: 100%; border-radius: 10px;
+           border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+           background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; }
+  button[disabled] { opacity: .4; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+  th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+  th:first-child, td:first-child { text-align: left; }
+  #big { font: 700 34px/1.1 ui-monospace, monospace; margin: 18px 0 4px; }
+  #log { font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; max-height: 34vh; overflow: auto; margin-top: 16px; opacity: .8; }
+</style>
+</head>
+<body>
+<h1>Spike 2 — Stockfish 18 lite, single-threaded</h1>
+<p class="sub">Measures whether the engine loads inside this browser's memory limits and how fast it searches. Run it from the Home Screen icon for a true standalone number.</p>
+<button id="run">Load engine and benchmark</button>
+<div id="big"></div>
+<div id="peak"></div>
+<table id="tbl" hidden>
+  <thead><tr><th>position</th><th>mode</th><th>ms</th><th>nodes</th><th>nps</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div id="log"></div>
+
+<script>
+const ENGINE = '../engine/stockfish-18-lite-single.js';
+const WASM   = '../engine/stockfish-18-lite-single.wasm';
+const KIWIPETE = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1';
+const MIDGAME  = 'r1bq1r1k/pp2n1bp/2n1p1p1/2ppP3/3P1P2/2NB1N2/PPPB2PP/R2Q1RK1 w - - 0 12';
+
+const logEl = document.getElementById('log');
+const log = (m) => { logEl.textContent = m + '\n' + logEl.textContent; };
+const rows = document.querySelector('#tbl tbody');
+
+function addRow(cells) {
+  document.getElementById('tbl').hidden = false;
+  const tr = document.createElement('tr');
+  for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.append(td); }
+  rows.append(tr);
+}
+
+document.getElementById('run').addEventListener('click', async (ev) => {
+  ev.target.disabled = true;
+  const results = [];
+  let worker;
+  const t0 = performance.now();
+  try {
+    // The build reads its .wasm path from location.hash, and installs its own
+    // onmessage handler, so a plain Worker is the whole integration.
+    worker = new Worker(ENGINE + '#' + encodeURIComponent(new URL(WASM, location.href).pathname));
+  } catch (e) {
+    log('FAILED to construct Worker: ' + e.message);
+    return;
+  }
+  let onLine = () => {};
+  worker.onmessage = (e) => {
+    const line = typeof e.data === 'string' ? e.data.trim() : JSON.stringify(e.data);
+    onLine(line);
+  };
+  worker.onerror = (e) => log('WORKER ERROR: ' + (e.message || 'unknown'));
+
+  const send = (c) => worker.postMessage(c);
+  const waitFor = (pred, label, ms = 180000) => new Promise((resolve, reject) => {
+    const lines = [];
+    const timer = setTimeout(() => reject(new Error('timeout waiting for ' + label)), ms);
+    onLine = (line) => {
+      lines.push(line);
+      if (/^info depth/.test(line)) { /* keep, no log spam */ } else { log(line); }
+      if (pred(line)) { clearTimeout(timer); onLine = () => {}; resolve(lines); }
+    };
+  });
+
+  try {
+    send('uci');
+    const idLines = await waitFor((l) => l === 'uciok', 'uciok', 180000);
+    const loadMs = Math.round(performance.now() - t0);
+    log('--- engine booted in ' + loadMs + ' ms ---');
+    log((idLines.find((l) => l.startsWith('id name')) || ''));
+    send('isready');
+    await waitFor((l) => l === 'readyok', 'readyok');
+
+    const jobs = [
+      ['startpos', 'position startpos', 'go depth 16'],
+      ['kiwipete', 'position fen ' + KIWIPETE, 'go depth 16'],
+      ['midgame',  'position fen ' + MIDGAME,  'go depth 16'],
+      ['midgame',  'position fen ' + MIDGAME,  'go movetime 3000'],
+    ];
+    for (const [name, posCmd, goCmd] of jobs) {
+      send(posCmd);
+      const s = performance.now();
+      send(goCmd);
+      const lines = await waitFor((l) => l.startsWith('bestmove'), 'bestmove ' + name);
+      const ms = Math.round(performance.now() - s);
+      const info = lines.filter((l) => l.startsWith('info depth')).pop() || '';
+      const nps = (/\bnps (\d+)/.exec(info) || [])[1] || '?';
+      const nodes = (/\bnodes (\d+)/.exec(info) || [])[1] || '?';
+      results.push(Number(nps) || 0);
+      addRow([name, goCmd.replace('go ', ''), ms, Number(nodes).toLocaleString(), Number(nps).toLocaleString()]);
+      log(name + ' ' + goCmd + ' -> ' + (lines.find((l) => l.startsWith('bestmove')) || ''));
+    }
+    const peak = Math.max(...results);
+    document.getElementById('big').textContent = peak.toLocaleString() + ' nps';
+    document.getElementById('peak').textContent =
+      'peak reported nodes/sec · engine booted in ' + loadMs + ' ms · ' +
+      (window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser tab');
+    send('quit');
+  } catch (e) {
+    log('FAILED: ' + e.message);
+    document.getElementById('big').textContent = 'FAILED';
+    document.getElementById('peak').textContent = e.message +
+      ' — if the page reloaded itself instead, Safari killed the tab for memory.';
+  }
+});
+</script>
+</body>
+</html>
