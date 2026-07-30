@@ -107,6 +107,32 @@ export class Position {
     return this.game.isCheck();
   }
 
+  /** Squares holding pieces of `byColor` that attack `square`. */
+  attackersOf(square: Square, byColor: Color): Square[] {
+    return this.game.attackers(square as never, byColor) as Square[];
+  }
+
+  /** Is `square` attacked by any piece of `byColor`? */
+  isAttackedBy(square: Square, byColor: Color): boolean {
+    return this.game.isAttacked(square as never, byColor);
+  }
+
+  /** Every occupied square, with its piece. */
+  occupied(): Array<{ square: Square; piece: Piece }> {
+    const out: Array<{ square: Square; piece: Piece }> = [];
+    for (const row of this.game.board()) {
+      for (const cell of row) {
+        if (cell) {
+          out.push({
+            square: cell.square,
+            piece: { color: cell.color as Color, type: cell.type as PieceSymbol },
+          });
+        }
+      }
+    }
+    return out;
+  }
+
   /**
    * Game state. Checkmate and stalemate first, then the three draw rules;
    * threefold and fifty-move are reported even though a real arbiter would
