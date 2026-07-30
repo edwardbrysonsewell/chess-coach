@@ -4,11 +4,12 @@
   "description": "",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node tools/build-sw.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "bench:node": "node tools/bench-node.cjs lite-single"
+    "bench:node": "node tools/bench-node.cjs lite-single",
+    "icons": "node tools/make-icons.mjs"
   },
   "keywords": [],
   "author": "",

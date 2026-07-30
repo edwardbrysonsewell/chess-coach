@@ -168,6 +168,9 @@ Each phase ends with evidence pasted and a stop.
 2. chess.js is BSD-2-Clause, not MIT.
 3. Post-game accuracy formula: Lichess-style win-probability model vs a simpler
    ACPL curve. Whichever we pick gets documented in the README.
-4. Coach tone: terse analyst or encouraging teacher.
+4. ~~Coach tone~~ — **settled 2026-07-30**: encouraging teacher. Still always
+   specific and mechanically grounded; the warmth is in the framing, never in
+   vagueness. "Careful — that leaves the e5 pawn undefended, and Nxe5 wins it"
+   rather than either "this drops a pawn" or "keep it up!".
 5. Piece set licence: Cburnett is CC BY-SA 3.0, which carries a share-alike
    condition — irrelevant for personal use, relevant if ever published.

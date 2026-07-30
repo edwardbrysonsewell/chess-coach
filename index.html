@@ -4,23 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#111315">
+<meta name="apple-mobile-web-app-title" content="Chess Coach">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11151a" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <title>Chess Coach</title>
-<style>
-  :root { color-scheme: light dark; font: 17px/1.45 -apple-system, system-ui, sans-serif; }
-  body { margin: 0; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
-  a { color: inherit; }
-  ul { padding-left: 20px; }
-</style>
 </head>
 <body>
-<h1>Chess Coach</h1>
-<p>Phase 1 skeleton. The app itself is not built yet.</p>
-<ul>
-  <li><a href="./spike/haptics.html">Spike 1 — iOS haptics probe</a></li>
-  <li><a href="./spike/nps.html">Spike 2 — Stockfish speed on this device</a></li>
-</ul>
-<script type="module" src="/src/main.ts"></script>
+<div id="app"></div>
+<script type="module" src="/src/app/main.ts"></script>
 </body>
 </html>

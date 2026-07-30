@@ -110,6 +110,11 @@ export class Bot {
     };
   }
 
+  /** Abandon a search in progress, e.g. because the move was taken back. */
+  stop(): void {
+    this.engine.stop();
+  }
+
   private async applyOptions(): Promise<void> {
     if (this.optionState.appliedElo === this.rung.elo) return;
     for (const [name, value] of optionsFor(this.rung)) {

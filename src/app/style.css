@@ -1,0 +1,342 @@
+/*
+ * One-handed portrait first. The board is the widest thing on screen and sits
+ * high; everything the game needs is in the control row within thumb reach.
+ * Landscape is not designed for, but caps the board height so it cannot break.
+ */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #14181c;
+  --muted: #5d6773;
+  --line: rgba(20, 24, 28, 0.12);
+  --accent: #2f6feb;
+  --accent-text: #ffffff;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151a;
+    --surface: #1a2027;
+    --text: #eef2f6;
+    --muted: #9aa7b4;
+    --line: rgba(238, 242, 246, 0.14);
+    --accent: #5b93ff;
+    --accent-text: #0b1017;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * The `hidden` attribute is only `display: none` from the UA stylesheet, so any
+ * author `display` rule silently beats it. That bug had the bottom sheet
+ * covering the whole board and swallowing every tap while looking dismissed.
+ */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 8px) calc(var(--safe-right) + 10px)
+    calc(var(--safe-bottom) + 10px) calc(var(--safe-left) + 10px);
+  max-width: 620px;
+  margin: 0 auto;
+  /* Full height so the controls can sit at the bottom, in thumb reach: the board
+   * stays high and nothing important lands in the middle of the screen. */
+  min-height: 100dvh;
+}
+
+/* The move list stays directly under the board, in reading order; the slack goes
+ * between it and the controls, which is where the coach panel appears. */
+.controls {
+  margin-top: auto;
+}
+
+.status {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  min-height: 22px;
+  text-align: center;
+}
+.status[data-tone='yours'] {
+  color: var(--text);
+}
+.status[data-tone='result'] {
+  color: var(--accent);
+  font-size: 17px;
+}
+
+.clocks {
+  display: flex;
+  gap: 8px;
+}
+.clock {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.clock-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.clock-time {
+  font: 600 22px/1 ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.clock-time[data-running='true'] {
+  color: var(--accent);
+}
+.clock-time[data-low='true'] {
+  color: #e2564b;
+}
+
+/* The board: full width, square, and never taller than the viewport allows. */
+.board-host {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 68dvh;
+  margin-inline: auto;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+  touch-action: none;
+}
+.board-host svg {
+  max-height: 68dvh;
+}
+
+.coach {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.move-list {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px 2px;
+  min-height: 36px;
+  align-items: center;
+}
+.move-list::-webkit-scrollbar {
+  display: none;
+}
+.move-pair {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.move-number {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ply {
+  font: 600 15px/1 inherit;
+  font-family: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: var(--text);
+  min-height: 32px;
+}
+.ply[data-current='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+/* Taken back, still redoable: present but visibly not part of the game now. */
+.ply[data-ahead='true'] {
+  opacity: 0.38;
+  text-decoration: line-through;
+}
+
+/* Controls: big enough for a thumb, evenly split across the width. */
+.controls {
+  display: flex;
+  gap: 8px;
+}
+.btn {
+  flex: 1;
+  min-height: 50px;
+  font: 600 15px/1 inherit;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn[disabled] {
+  opacity: 0.4;
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.btn.wide {
+  width: 100%;
+  flex: none;
+  margin-bottom: 8px;
+}
+
+/* Bottom sheet */
+.sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 20;
+}
+.sheet-panel {
+  width: 100%;
+  max-height: 86dvh;
+  overflow-y: auto;
+  background: var(--bg);
+  border-radius: 18px 18px 0 0;
+  padding: 16px 16px calc(var(--safe-bottom) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sheet-title {
+  margin: 0;
+  font-size: 18px;
+}
+.sheet-subtitle {
+  margin: 12px 0 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--line);
+  min-height: 48px;
+}
+.setting-label {
+  font-size: 16px;
+}
+.select {
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 9px;
+  min-height: 40px;
+}
+.toggle {
+  width: 52px;
+  height: 32px;
+  accent-color: var(--accent);
+}
+input[type='range'] {
+  width: 55%;
+  accent-color: var(--accent);
+}
+
+.promo-row {
+  display: flex;
+  gap: 10px;
+}
+.promo {
+  flex: 1;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+}
+.promo img {
+  width: 82%;
+  height: auto;
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+    align-items: start;
+    max-width: none;
+  }
+  .board-host,
+  .board-host svg {
+    max-height: calc(100dvh - 32px);
+  }
+  .status,
+  .clocks,
+  .move-list,
+  .controls,
+  .coach {
+    grid-column: 2;
+  }
+  .board-host {
+    grid-column: 1;
+    grid-row: 1 / span 5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active {
+    transform: none;
+  }
+}

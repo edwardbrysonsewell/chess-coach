@@ -10,6 +10,10 @@ export default defineConfig({
     // The vendored engine lives in public/ and is copied verbatim; never inline
     // it as a data URI.
     assetsInlineLimit: 0,
+    // Drop Vite's module-preload polyfill: it is the only thing in our own
+    // bundle that calls fetch(), and an app that ships every byte it will ever
+    // need has nothing to preload. Keeps the offline audit honest.
+    modulePreload: { polyfill: false },
   },
   server: { host: true },
   test: {
